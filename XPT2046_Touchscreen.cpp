@@ -28,10 +28,11 @@
 #define SPI_SETTING     SPISettings(2000000, MSBFIRST, SPI_MODE0)
 
 static XPT2046_Touchscreen 	*isrPinptr;
-void isrPin(void);
 
-bool XPT2046_Touchscreen::begin(SPIClass &wspi)
+bool XPT2046_Touchscreen::begin(TaskHandle_t isrNotifyTask, uint32_t isrNotifyValue, SPIClass &wspi)
 {
+  _isrNotifyTask = isrNotifyTask;
+  _isrNotifyValue = isrNotifyValue;
 	_pspi = &wspi;
 	_pspi->begin();
 	pinMode(csPin, OUTPUT);
@@ -64,10 +65,15 @@ bool XPT2046_Touchscreen::begin(FlexIOSPI &wflexspi)
 
 
 ISR_PREFIX
-void isrPin( void )
+void XPT2046_Touchscreen::isrPin( void )
 {
 	XPT2046_Touchscreen *o = isrPinptr;
-	o->isrWake = true;
+	o->_isrWake = true;
+  if (o->_isrNotifyTask) {
+    BaseType_t taskWoken;
+    xTaskNotifyFromISR(o->_isrNotifyTask, o->_isrNotifyValue, eSetBits, &taskWoken);
+    portYIELD_FROM_ISR(taskWoken);
+  }
 }
 
 TS_Point XPT2046_Touchscreen::getPoint()
@@ -78,7 +84,7 @@ TS_Point XPT2046_Touchscreen::getPoint()
 
 bool XPT2046_Touchscreen::tirqTouched()
 {
-	return (isrWake);
+	return (_isrWake);
 }
 
 bool XPT2046_Touchscreen::touched()
@@ -121,7 +127,7 @@ void XPT2046_Touchscreen::update()
 {
 	int16_t data[6];
 	int z;
-	if (!isrWake) return;
+	if (!_isrWake) return;
 	uint32_t now = millis();
 	if (now - msraw < MSEC_THRESHOLD) return;
 	if (_pspi) {
@@ -178,7 +184,7 @@ void XPT2046_Touchscreen::update()
 		// Serial.println();
 		zraw = 0;
 		if (z < Z_THRESHOLD_INT) { //	if ( !touched ) {
-			if (255 != tirqPin) isrWake = false;
+			if (255 != tirqPin) _isrWake = false;
 		}
 		return;
 	}

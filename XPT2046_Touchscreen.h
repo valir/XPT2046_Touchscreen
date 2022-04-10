@@ -36,6 +36,17 @@
 #error "Arduino 1.6.0 or later (SPI library) is required"
 #endif
 
+#ifndef ISR_PREFIX
+  #if defined(ESP8266)
+    #define ISR_PREFIX ICACHE_RAM_ATTR
+  #elif defined(ESP32)
+    // TODO: should this also be ICACHE_RAM_ATTR ??
+    #define ISR_PREFIX IRAM_ATTR
+  #else
+    #define ISR_PREFIX
+  #endif
+#endif
+
 class TS_Point {
 public:
 	TS_Point(void) : x(0), y(0), z(0) {}
@@ -48,8 +59,8 @@ public:
 class XPT2046_Touchscreen {
 public:
 	constexpr XPT2046_Touchscreen(uint8_t cspin, uint8_t tirq=255)
-		: csPin(cspin), tirqPin(tirq) { }
-	bool begin(SPIClass &wspi = SPI);
+		: csPin(cspin), tirqPin(tirq)  { }
+	bool begin(TaskHandle_t isrNotifyTask =nullptr, uint32_t isrNotifyValue =0, SPIClass &wspi = SPI);
 #if defined(_FLEXIO_SPI_H_)
 	bool begin(FlexIOSPI &wflexspi);
 #endif
@@ -62,10 +73,10 @@ public:
 	uint8_t bufferSize() { return 1; }
 	void setRotation(uint8_t n) { rotation = n % 4; }
 // protected:
-	volatile bool isrWake=true;
 
 private:
 	void update();
+  ISR_PREFIX static void isrPin();
 	uint8_t csPin, tirqPin, rotation=1;
 	int16_t xraw=0, yraw=0, zraw=0;
 	uint32_t msraw=0x80000000;
@@ -73,17 +84,10 @@ private:
 #if defined(_FLEXIO_SPI_H_)
 	FlexIOSPI *_pflexspi = nullptr;
 #endif
+	volatile bool _isrWake=true;
+  volatile TaskHandle_t _isrNotifyTask =nullptr;
+  volatile uint32_t _isrNotifyValue = 0;
 };
 
-#ifndef ISR_PREFIX
-  #if defined(ESP8266)
-    #define ISR_PREFIX ICACHE_RAM_ATTR
-  #elif defined(ESP32)
-    // TODO: should this also be ICACHE_RAM_ATTR ??
-    #define ISR_PREFIX IRAM_ATTR
-  #else
-    #define ISR_PREFIX
-  #endif
-#endif
 
 #endif
